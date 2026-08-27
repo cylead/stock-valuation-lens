@@ -14,7 +14,7 @@ const state = {
   data: null,
   range: null,
   selection: [],
-  visibility: { price: true, adjusted: true, fair: true },
+  visibility: { price: true, adjusted: true, fair: true, dividend: true },
   chartLayout: null,
   brushLayout: null,
   chartDrag: null,
@@ -109,6 +109,12 @@ function updateCompanyHeader() {
   }
   const adjustedLegend = $('#legend button[data-series="adjusted"]');
   adjustedLegend.hidden = !company.availability.split_price;
+  const dividendLegend = $('#legend button[data-series="dividend"]');
+  dividendLegend.disabled = !company.availability.dividend_per_share;
+  dividendLegend.classList.toggle("on", company.availability.dividend_per_share && state.visibility.dividend);
+  dividendLegend.title = company.availability.dividend_per_share
+    ? "Show or hide reported annual dividends per share."
+    : "No reported annual dividend per share is available for this company.";
 }
 
 async function selectCompany(ticker) {
@@ -336,12 +342,14 @@ function renderChart() {
   const width = Math.max(target.clientWidth, 620);
   const height = Math.max(target.clientHeight, 360);
   target.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  const margin = { top: 18, right: 24, bottom: 38, left: 66 };
-  const plot = { left: margin.left, top: margin.top, right: width - margin.right, bottom: height - margin.bottom };
   const prices = state.data.priceSeries;
   const valuations = state.data.valuation.valuationPoints;
+  const dividends = state.data.dividendSeries || [];
   const hasCurrentFormula = formulaServiceCurrent();
   const hasSplit = prices.some((row) => row.splitClose !== null);
+  const showDividends = state.visibility.dividend && dividends.length > 0;
+  const margin = { top: 18, right: showDividends ? 92 : 24, bottom: 38, left: 66 };
+  const plot = { left: margin.left, top: margin.top, right: width - margin.right, bottom: height - margin.bottom };
   const primaryKey = hasSplit ? "splitClose" : "adjustedClose";
   const allDates = prices.map((row) => time(row.date)).filter(Number.isFinite);
   const empty = !allDates.length;
@@ -356,7 +364,9 @@ function renderChart() {
   const [yMin, yMax] = extent(yValues);
   const x = (date) => plot.left + ((time(date) - xMin) / Math.max(1, xMax - xMin)) * (plot.right - plot.left);
   const y = (value) => plot.bottom - ((Number(value) - yMin) / Math.max(1e-9, yMax - yMin)) * (plot.bottom - plot.top);
-  state.chartLayout = { width, height, plot, xMin, xMax, yMin, yMax, x, y, primaryKey };
+  const [, dividendMax] = extent(dividends.map((row) => row.value));
+  const dividendY = (value) => plot.bottom - (Number(value) / Math.max(1e-9, dividendMax)) * (plot.bottom - plot.top);
+  state.chartLayout = { width, height, plot, xMin, xMax, yMin, yMax, x, y, dividendY, primaryKey };
 
   const background = svg("rect", { x: plot.left, y: plot.top, width: plot.right - plot.left, height: plot.bottom - plot.top, fill: "#fffdf7" });
   target.appendChild(background);
@@ -371,6 +381,22 @@ function renderChart() {
     const xx = plot.left + ((plot.right - plot.left) * index) / 5;
     target.appendChild(svg("line", { x1: xx, x2: xx, y1: plot.top, y2: plot.bottom, stroke: "#f0f1ed", "stroke-width": 1 }));
     addText(target, xx, plot.bottom + 22, new Date(value).getUTCFullYear(), { "text-anchor": "middle" });
+  }
+  if (showDividends) {
+    for (let index = 0; index <= 5; index += 1) {
+      const value = (dividendMax * index) / 5;
+      addText(target, plot.right + 10, dividendY(value) + 4, compact(value), {
+        fill: "#76508f",
+        "text-anchor": "start",
+      });
+    }
+    const dividendAxisMiddle = (plot.top + plot.bottom) / 2;
+    addText(target, width - 8, dividendAxisMiddle, "Dividend / share", {
+      fill: "#76508f",
+      "font-size": 10,
+      "text-anchor": "middle",
+      transform: "rotate(-90 " + (width - 8) + " " + dividendAxisMiddle + ")",
+    });
   }
 
   const fairPoints = hasCurrentFormula
@@ -398,6 +424,28 @@ function renderChart() {
   if (state.visibility.price) {
     const points = prices.map((row) => ({ date: row.date, value: row[primaryKey] }));
     target.appendChild(svg("path", { d: pathFrom(points, x, y), fill: "none", stroke: "#17221d", "stroke-width": 2, "stroke-linejoin": "round" }));
+  }
+  if (showDividends) {
+    const points = dividends.map((row) => ({ date: row.date, value: row.value }));
+    target.appendChild(svg("path", {
+      d: pathFrom(points, x, dividendY),
+      fill: "none",
+      stroke: "#76508f",
+      "stroke-width": 2.4,
+      "stroke-linejoin": "round",
+    }));
+    dividends.forEach((point) => {
+      const marker = svg("circle", {
+        cx: x(point.date),
+        cy: dividendY(point.value),
+        r: 3.5,
+        fill: "#fffdf7",
+        stroke: "#76508f",
+        "stroke-width": 2,
+      });
+      marker.appendChild(svg("title", {}, `${point.date}: dividend/share ${fmt(point.value, 3)} · ${sourceLabel(point.source)}`));
+      target.appendChild(marker);
+    });
   }
   valuations.forEach((point) => {
     if (hasCurrentFormula && point.fairValue !== null && state.visibility.fair) {
@@ -450,6 +498,10 @@ function renderTooltip(event) {
     if (!best) return item;
     return Math.abs(time(item.date) - time(point.date)) < Math.abs(time(best.date) - time(point.date)) ? item : best;
   }, null);
+  const dividend = (state.data.dividendSeries || []).reduce((best, item) => {
+    if (!best) return item;
+    return Math.abs(time(item.date) - time(point.date)) < Math.abs(time(best.date) - time(point.date)) ? item : best;
+  }, null);
   tooltip.textContent = "";
   const title = document.createElement("b");
   title.textContent = point.date;
@@ -460,6 +512,7 @@ function renderTooltip(event) {
     [state.company.availability.split_price ? "Split-only close" : "Stooq close (approx.)", point.splitClose ?? point.adjustedClose],
     ["Stooq adjusted", point.adjustedClose],
     [state.data.metric.label, valuation?.metricValue],
+    ["Dividend / share", state.visibility.dividend ? dividend?.value : null],
     [priceMultipleLabel, priceMultiple, priceMultiple === null ? null : `${fmt(priceMultiple, 1)}×`],
     ["Formula value", formulaServiceCurrent() ? valuation?.fairValue : null],
   ];
@@ -737,11 +790,17 @@ function renderTable() {
   $("#table-count").textContent = `${rows.filter((row) => row.value !== null).length} observations`;
   rows.forEach((row) => {
     const tr = document.createElement("tr");
-    const values = [row.period_end, compact(row.value), compact(row.fcf), sourceLabel(row.source)];
+    const values = [
+      row.period_end,
+      compact(row.value),
+      compact(row.dividendPerShare),
+      compact(row.fcf),
+      sourceLabel(row.source),
+    ];
     values.forEach((value, index) => {
       const td = document.createElement("td");
       td.textContent = value;
-      if (index === 3) {
+      if (index === 4) {
         td.className = "source";
         td.title = row.source ? JSON.stringify(row.source, null, 2) : "No supported reported fact";
       }
@@ -777,6 +836,9 @@ function exportCsv() {
   state.data.valuation.valuationPoints.forEach((row) => {
     lines.push([state.metric, row.date, row.metricValue ?? "", "reported annual metric"]);
     if (hasCurrentFormula && row.fairValue !== null) lines.push(["formula_value", row.date, row.fairValue, `multiple=${state.data.valuation.appliedMultiple}`]);
+  });
+  (state.data.dividendSeries || []).forEach((row) => {
+    lines.push(["dividend_per_share", row.date, row.value, sourceLabel(row.source)]);
   });
   const escaped = lines.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
   downloadBlob(new Blob([escaped], { type: "text/csv;charset=utf-8" }), `${state.ticker}-${state.metric}-${state.range.start}-${state.range.end}.csv`);
@@ -922,9 +984,12 @@ async function initialize() {
     $("#source-freshness").textContent = `${health.companies.toLocaleString()} local companies`;
     const companies = await searchCompanies("AAPL");
     $("#search-results").hidden = true;
-    if (companies.length) await selectCompany(companies[0].ticker);
+    const apple = companies.find((company) => company.ticker === "AAPL");
+    if (apple) await selectCompany(apple.ticker);
+    else $("#welcome").hidden = false;
   } catch (error) {
     $("#source-freshness").textContent = "Database unavailable";
+    $("#welcome").hidden = false;
     showError(error);
   }
 }

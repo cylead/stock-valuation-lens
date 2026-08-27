@@ -37,8 +37,8 @@ def _json_source(value):
 def company_payload(connection, ticker):
     row = connection.execute(
         "SELECT ticker,cik,name,exchange,price_source,currency,reporting_source,is_sec_filer,"
-        "latest_adjusted_date,latest_split_date,has_basic_eps,has_diluted_eps,has_fcf,"
-        "has_fcf_per_share,has_split_price "
+        "latest_adjusted_date,latest_split_date,has_basic_eps,has_diluted_eps,"
+        "has_dividend_per_share,has_fcf,has_fcf_per_share,has_split_price "
         "FROM companies WHERE ticker=?",
         (normalize_ticker(ticker),),
     ).fetchone()
@@ -47,6 +47,7 @@ def company_payload(connection, ticker):
     availability = {
         "eps_basic": bool(row["has_basic_eps"]),
         "eps_diluted": bool(row["has_diluted_eps"]),
+        "dividend_per_share": bool(row["has_dividend_per_share"]),
         "fcf_total": bool(row["has_fcf"]),
         "fcf_per_share": bool(row["has_fcf_per_share"]),
         "split_price": bool(row["has_split_price"]),
@@ -57,6 +58,8 @@ def company_payload(connection, ticker):
         reasons.append("No %s basic EPS is available." % fact_description)
     if not availability["eps_diluted"]:
         reasons.append("No %s diluted EPS is available." % fact_description)
+    if not availability["dividend_per_share"]:
+        reasons.append("No %s common-stock dividend per share is available." % fact_description)
     if not availability["fcf_total"]:
         reasons.append("FCF unavailable because matching annual OCF and cash-capex facts were not found.")
     elif not availability["fcf_per_share"]:
@@ -82,7 +85,8 @@ def search_companies(connection, query, limit=20):
     limit = max(1, min(int(limit), 50))
     if not query:
         rows = connection.execute(
-            "SELECT ticker,name,exchange,has_basic_eps,has_diluted_eps,has_fcf_per_share,has_split_price "
+            "SELECT ticker,name,exchange,has_basic_eps,has_diluted_eps,has_dividend_per_share,"
+            "has_fcf_per_share,has_split_price "
             "FROM companies ORDER BY ticker LIMIT ?",
             (limit,),
         ).fetchall()
@@ -91,7 +95,8 @@ def search_companies(connection, query, limit=20):
         contains = "%" + query.replace("%", "\\%").replace("_", "\\_") + "%"
         prefix = upper.replace("%", "\\%").replace("_", "\\_") + "%"
         rows = connection.execute(
-            "SELECT ticker,name,exchange,has_basic_eps,has_diluted_eps,has_fcf_per_share,has_split_price "
+            "SELECT ticker,name,exchange,has_basic_eps,has_diluted_eps,has_dividend_per_share,"
+            "has_fcf_per_share,has_split_price "
             "FROM companies WHERE ticker LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\' COLLATE NOCASE "
             "ORDER BY CASE WHEN ticker=? THEN 0 WHEN ticker LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END, ticker LIMIT ?",
             (prefix, contains, upper, prefix, limit),
@@ -104,6 +109,7 @@ def search_companies(connection, query, limit=20):
             "availability": {
                 "eps_basic": bool(row["has_basic_eps"]),
                 "eps_diluted": bool(row["has_diluted_eps"]),
+                "dividend_per_share": bool(row["has_dividend_per_share"]),
                 "fcf_per_share": bool(row["has_fcf_per_share"]),
                 "split_price": bool(row["has_split_price"]),
             },
@@ -160,7 +166,8 @@ def build_chart_payload(connection, ticker, metric="eps_diluted", start=None, en
         params.append(end)
     rows = connection.execute(
         "SELECT f.period_start,f.period_end,f.fiscal_year,f.%s AS metric_value,"
-        "f.fcf,f.fcf_per_share,f.ocf,f.capex,f.diluted_shares,f.%s AS source "
+        "f.dividend_per_share,f.dividend_source,f.fcf,f.fcf_per_share,f.ocf,f.capex,"
+        "f.diluted_shares,f.%s AS source "
         "FROM fundamentals f %s ORDER BY f.period_end" % (
             metric_info["column"], metric_info["source_column"], where
         ),
@@ -172,6 +179,7 @@ def build_chart_payload(connection, ticker, metric="eps_diluted", start=None, en
             "period_end": row["period_end"],
             "fiscalYear": row["fiscal_year"],
             "value": row["metric_value"],
+            "dividendPerShare": row["dividend_per_share"],
             "fcf": row["fcf"],
             "fcfPerShare": row["fcf_per_share"],
             "ocf": row["ocf"],
@@ -180,6 +188,15 @@ def build_chart_payload(connection, ticker, metric="eps_diluted", start=None, en
             "source": _json_source(row["source"]),
         }
         for row in rows
+    ]
+    dividend_series = [
+        {
+            "date": row["period_end"],
+            "fiscalYear": row["fiscal_year"],
+            "value": row["dividend_per_share"],
+            "source": _json_source(row["dividend_source"]),
+        }
+        for row in rows if row["dividend_per_share"] is not None
     ]
 
     date_where = ""
@@ -209,6 +226,7 @@ def build_chart_payload(connection, ticker, metric="eps_diluted", start=None, en
         "metric": {"id": metric, "label": metric_info["label"]},
         "bounds": {"minimum": minimum, "maximum": maximum, "start": start, "end": end},
         "fundamentals": fundamentals,
+        "dividendSeries": dividend_series,
         "priceSeries": price_series,
         "valuation": valuation,
         "warnings": list(dict.fromkeys(warnings)),

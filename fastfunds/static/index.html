@@ -22,15 +22,10 @@
   </header>
 
   <main>
-    <section id="welcome" class="welcome card">
-      <p class="eyebrow">LOCAL FUNDAMENTAL ANALYSIS</p>
-      <h1>See price in the context of earnings and cash generation.</h1>
-      <p>Search a supported listed company to compare weekly price with reported annual EPS or free cash flow per share. Your source files remain local and unchanged.</p>
-      <div class="welcome-grid">
-        <div><b>GAAP facts</b><span>Auditable 10-K values and filing provenance</span></div>
-        <div><b>Dynamic valuation</b><span>Selected-window formula valuations</span></div>
-        <div><b>Time-aware</b><span>Range presets, brush, pan, zoom, and returns</span></div>
-      </div>
+    <section id="welcome" class="welcome card" hidden>
+      <p class="eyebrow">LOCAL DATA REQUIRED</p>
+      <h1>Build the local database to start.</h1>
+      <p>Apple opens automatically as the example when AAPL is available. You can then search for any other imported company.</p>
     </section>
 
     <section id="workspace" hidden>
@@ -94,6 +89,7 @@
           <button type="button" data-series="price" class="on"><i class="legend-price"></i>Split-only price</button>
           <button type="button" data-series="adjusted" class="on"><i class="legend-adjusted"></i>Stooq adjusted</button>
           <button type="button" data-series="fair" class="on"><i class="legend-fair"></i>Formula value</button>
+          <button type="button" data-series="dividend" class="on"><i class="legend-dividend"></i>Dividend / share</button>
         </div>
         <div id="chart-wrap" class="chart-wrap">
           <svg id="main-chart" role="img" aria-label="Historical valuation chart"></svg>
@@ -129,7 +125,7 @@
           </div>
           <div class="table-scroll">
             <table>
-              <thead><tr><th>Fiscal end</th><th id="metric-column-heading">Value</th><th>FCF total</th><th>Source</th></tr></thead>
+              <thead><tr><th>Fiscal end</th><th id="metric-column-heading">Value</th><th>Dividend / share</th><th>FCF total</th><th>Source</th></tr></thead>
               <tbody id="fundamentals-body"></tbody>
             </table>
           </div>

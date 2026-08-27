@@ -13,12 +13,16 @@ import tempfile
 from .core import annual_duration, normalize_ticker, parse_date
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 FORMS = {"10-K", "10-K/A"}
 EXCHANGES = {"NASDAQ", "NYSE", "NYSE AMERICAN", "NYSE MKT"}
 
 EPS_BASIC_TAGS = ("EarningsPerShareBasic",)
 EPS_DILUTED_TAGS = ("EarningsPerShareDiluted",)
+DIVIDEND_PER_SHARE_TAGS = (
+    "CommonStockDividendsPerShareDeclared",
+    "CommonStockDividendsPerShareCashPaid",
+)
 OCF_TAGS = (
     "NetCashProvidedByUsedInOperatingActivities",
     "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
@@ -61,6 +65,7 @@ CREATE TABLE companies (
     latest_split_date TEXT,
     has_basic_eps INTEGER NOT NULL DEFAULT 0,
     has_diluted_eps INTEGER NOT NULL DEFAULT 0,
+    has_dividend_per_share INTEGER NOT NULL DEFAULT 0,
     has_fcf INTEGER NOT NULL DEFAULT 0,
     has_fcf_per_share INTEGER NOT NULL DEFAULT 0,
     has_split_price INTEGER NOT NULL DEFAULT 0
@@ -76,6 +81,7 @@ CREATE TABLE fundamentals (
     fiscal_year INTEGER NOT NULL,
     basic_eps REAL,
     diluted_eps REAL,
+    dividend_per_share REAL,
     ocf REAL,
     capex REAL,
     fcf REAL,
@@ -83,6 +89,7 @@ CREATE TABLE fundamentals (
     fcf_per_share REAL,
     basic_source TEXT,
     diluted_source TEXT,
+    dividend_source TEXT,
     ocf_source TEXT,
     capex_source TEXT,
     shares_source TEXT,
@@ -124,6 +131,7 @@ def _empty_audit():
             "missingCompanyFacts": 0,
             "companiesWithBasicEps": 0,
             "companiesWithDilutedEps": 0,
+            "companiesWithDividendPerShare": 0,
             "companiesWithFcf": 0,
             "companiesWithFcfPerShare": 0,
             "companiesWithSplitPrices": 0,
@@ -404,23 +412,25 @@ def _apply_later_splits(record, split_events, mode, audit):
 
 
 def extract_fundamentals(payload, audit):
-    """Extract reported annual EPS and conservative simple FCF values."""
+    """Extract reported annual per-share metrics and conservative simple FCF values."""
     gaap = payload.get("facts", {}).get("us-gaap", {})
     if not gaap:
         return []
     basic = _fact_candidates(gaap, EPS_BASIC_TAGS, ("USD/shares",), audit)
     diluted = _fact_candidates(gaap, EPS_DILUTED_TAGS, ("USD/shares",), audit)
+    dividends = _fact_candidates(gaap, DIVIDEND_PER_SHARE_TAGS, ("USD/shares",), audit)
     ocf = _fact_candidates(gaap, OCF_TAGS, ("USD",), audit)
     capex = _fact_candidates(gaap, CAPEX_TAGS, ("USD",), audit)
     shares = _fact_candidates(gaap, SHARES_TAGS, ("shares",), audit)
     split_events = _split_events(gaap)
 
-    keys = set(basic) | set(diluted) | set(ocf) | set(capex) | set(shares)
+    keys = set(basic) | set(diluted) | set(dividends) | set(ocf) | set(capex) | set(shares)
     by_end = {}
     for key in sorted(keys):
         start, end = key
         basic_record = _apply_later_splits(basic.get(key), split_events, "per_share", audit)
         diluted_record = _apply_later_splits(diluted.get(key), split_events, "per_share", audit)
+        dividend_record = _apply_later_splits(dividends.get(key), split_events, "per_share", audit)
         ocf_record = ocf.get(key)
         capex_record = capex.get(key)
         shares_record = _apply_later_splits(shares.get(key), split_events, "shares", audit)
@@ -436,6 +446,7 @@ def extract_fundamentals(payload, audit):
             "fiscal_year": parse_date(end).year,
             "basic_eps": basic_record["value"] if basic_record else None,
             "diluted_eps": diluted_record["value"] if diluted_record else None,
+            "dividend_per_share": dividend_record["value"] if dividend_record else None,
             "ocf": ocf_record["value"] if ocf_record else None,
             "capex": capex_record["value"] if capex_record else None,
             "fcf": fcf,
@@ -443,6 +454,7 @@ def extract_fundamentals(payload, audit):
             "fcf_per_share": fcf_per_share,
             "basic_source": _source(basic_record),
             "diluted_source": _source(diluted_record),
+            "dividend_source": _source(dividend_record),
             "ocf_source": _source(ocf_record),
             "capex_source": _source(capex_record),
             "shares_source": _source(shares_record),
@@ -454,9 +466,9 @@ def extract_fundamentals(payload, audit):
         }
         previous = by_end.get(end)
         tracked_fields = (
-            "basic_eps", "diluted_eps", "ocf", "capex", "fcf", "diluted_shares",
-            "fcf_per_share", "basic_source", "diluted_source", "ocf_source",
-            "capex_source", "shares_source", "fcf_source",
+            "basic_eps", "diluted_eps", "dividend_per_share", "ocf", "capex", "fcf",
+            "diluted_shares", "fcf_per_share", "basic_source", "diluted_source",
+            "dividend_source", "ocf_source", "capex_source", "shares_source", "fcf_source",
         )
         if previous is None:
             record["_field_starts"] = {
@@ -601,6 +613,7 @@ def extract_supplemental_fundamentals(facts):
                 "fiscal_year": int(fact.get("fiscalYear") or end[:4]),
                 "basic_eps": _supplemental_number(fact, "basicEps"),
                 "diluted_eps": _supplemental_number(fact, "dilutedEps"),
+                "dividend_per_share": _supplemental_number(fact, "dividendPerShare"),
                 "ocf": ocf,
                 "capex": capex,
                 "fcf": fcf,
@@ -608,6 +621,7 @@ def extract_supplemental_fundamentals(facts):
                 "fcf_per_share": fcf_per_share,
                 "basic_source": _supplemental_source(fact, "basicEps"),
                 "diluted_source": _supplemental_source(fact, "dilutedEps"),
+                "dividend_source": _supplemental_source(fact, "dividendPerShare"),
                 "ocf_source": _supplemental_source(fact, "ocf"),
                 "capex_source": _supplemental_source(fact, "capex"),
                 "shares_source": _supplemental_source(fact, "dilutedShares"),
@@ -615,6 +629,24 @@ def extract_supplemental_fundamentals(facts):
             }
         )
     return sorted(rows, key=lambda item: item["period_end"])
+
+
+def _insert_fundamental_row(connection, cik, row):
+    connection.execute(
+        "INSERT OR REPLACE INTO fundamentals("
+        "cik,period_start,period_end,fiscal_year,basic_eps,diluted_eps,dividend_per_share,"
+        "ocf,capex,fcf,diluted_shares,fcf_per_share,basic_source,diluted_source,"
+        "dividend_source,ocf_source,capex_source,shares_source,fcf_source"
+        ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            cik, row["period_start"], row["period_end"], row["fiscal_year"],
+            row["basic_eps"], row["diluted_eps"], row["dividend_per_share"],
+            row["ocf"], row["capex"], row["fcf"], row["diluted_shares"],
+            row["fcf_per_share"], row["basic_source"], row["diluted_source"],
+            row["dividend_source"], row["ocf_source"], row["capex_source"],
+            row["shares_source"], row["fcf_source"],
+        ),
+    )
 
 
 def _prepare_database(path):
@@ -794,19 +826,7 @@ def build_database(
                     try:
                         rows = extract_supplemental_fundamentals(record["fundamentals"])
                         for row in rows:
-                            connection.execute(
-                                "INSERT OR REPLACE INTO fundamentals("
-                                "cik,period_start,period_end,fiscal_year,basic_eps,diluted_eps,ocf,capex,fcf,"
-                                "diluted_shares,fcf_per_share,basic_source,diluted_source,ocf_source,capex_source,"
-                                "shares_source,fcf_source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                (
-                                    cik, row["period_start"], row["period_end"], row["fiscal_year"],
-                                    row["basic_eps"], row["diluted_eps"], row["ocf"], row["capex"],
-                                    row["fcf"], row["diluted_shares"], row["fcf_per_share"],
-                                    row["basic_source"], row["diluted_source"], row["ocf_source"],
-                                    row["capex_source"], row["shares_source"], row["fcf_source"],
-                                ),
-                            )
+                            _insert_fundamental_row(connection, cik, row)
                         weekly, latest = read_supplemental_weekly(
                             record["path"], max_price_years=max_price_years
                         )
@@ -842,19 +862,7 @@ def build_database(
                                 payload = json.load(handle)
                             rows = extract_fundamentals(payload, audit)
                             for row in rows:
-                                connection.execute(
-                                    "INSERT OR REPLACE INTO fundamentals("
-                                    "cik,period_start,period_end,fiscal_year,basic_eps,diluted_eps,ocf,capex,fcf,"
-                                    "diluted_shares,fcf_per_share,basic_source,diluted_source,ocf_source,capex_source,"
-                                    "shares_source,fcf_source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                    (
-                                        cik, row["period_start"], row["period_end"], row["fiscal_year"],
-                                        row["basic_eps"], row["diluted_eps"], row["ocf"], row["capex"],
-                                        row["fcf"], row["diluted_shares"], row["fcf_per_share"],
-                                        row["basic_source"], row["diluted_source"], row["ocf_source"],
-                                        row["capex_source"], row["shares_source"], row["fcf_source"],
-                                    ),
-                                )
+                                _insert_fundamental_row(connection, cik, row)
                         except (OSError, ValueError, json.JSONDecodeError) as exc:
                             audit["summary"]["malformedFiles"] += 1
                             _append_limited(
@@ -885,6 +893,7 @@ def build_database(
                 "UPDATE companies SET "
                 "has_basic_eps=EXISTS(SELECT 1 FROM fundamentals f WHERE f.cik=companies.cik AND f.basic_eps IS NOT NULL),"
                 "has_diluted_eps=EXISTS(SELECT 1 FROM fundamentals f WHERE f.cik=companies.cik AND f.diluted_eps IS NOT NULL),"
+                "has_dividend_per_share=EXISTS(SELECT 1 FROM fundamentals f WHERE f.cik=companies.cik AND f.dividend_per_share IS NOT NULL),"
                 "has_fcf=EXISTS(SELECT 1 FROM fundamentals f WHERE f.cik=companies.cik AND f.fcf IS NOT NULL),"
                 "has_fcf_per_share=EXISTS(SELECT 1 FROM fundamentals f WHERE f.cik=companies.cik AND f.fcf_per_share IS NOT NULL)"
             )
@@ -893,26 +902,30 @@ def build_database(
 
             counts = connection.execute(
                 "SELECT COALESCE(SUM(has_basic_eps),0),COALESCE(SUM(has_diluted_eps),0),"
-                "COALESCE(SUM(has_fcf),0),COALESCE(SUM(has_fcf_per_share),0),"
+                "COALESCE(SUM(has_dividend_per_share),0),COALESCE(SUM(has_fcf),0),"
+                "COALESCE(SUM(has_fcf_per_share),0),"
                 "COALESCE(SUM(has_split_price),0) FROM companies"
             ).fetchone()
             keys = (
-                "companiesWithBasicEps", "companiesWithDilutedEps", "companiesWithFcf",
-                "companiesWithFcfPerShare", "companiesWithSplitPrices",
+                "companiesWithBasicEps", "companiesWithDilutedEps", "companiesWithDividendPerShare",
+                "companiesWithFcf", "companiesWithFcfPerShare", "companiesWithSplitPrices",
             )
             for key, count in zip(keys, counts):
                 audit["summary"][key] = int(count)
 
             missing_rows = connection.execute(
-                "SELECT ticker,has_basic_eps,has_diluted_eps,has_fcf,has_fcf_per_share "
-                "FROM companies WHERE NOT(has_basic_eps AND has_diluted_eps AND has_fcf_per_share)"
+                "SELECT ticker,has_basic_eps,has_diluted_eps,has_dividend_per_share,has_fcf,has_fcf_per_share "
+                "FROM companies WHERE NOT("
+                "has_basic_eps AND has_diluted_eps AND has_dividend_per_share AND has_fcf_per_share)"
             ).fetchall()
-            for ticker, basic_ok, diluted_ok, fcf_ok, fcf_share_ok in missing_rows:
+            for ticker, basic_ok, diluted_ok, dividend_ok, fcf_ok, fcf_share_ok in missing_rows:
                 missing = []
                 if not basic_ok:
                     missing.append("basic EPS")
                 if not diluted_ok:
                     missing.append("diluted EPS")
+                if not dividend_ok:
+                    missing.append("dividend/share")
                 if not fcf_ok:
                     missing.append("FCF (OCF and cash capex)")
                 elif not fcf_share_ok:

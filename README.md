@@ -1,12 +1,12 @@
 # Stock Valuation Lens
 
-Stock Valuation Lens is a local, dependency-free web application for comparing weekly stock prices with annual reported basic EPS, diluted EPS, and simple free cash flow per share. It builds a compact SQLite database from SEC Company Facts, Stooq, and any curated supplemental files already in this directory; it never changes or deletes those raw files.
+Stock Valuation Lens is a local, dependency-free web application for comparing weekly stock prices with annual reported basic EPS, diluted EPS, simple free cash flow per share, and dividends per share. It builds a compact SQLite database from SEC Company Facts, Stooq, and any curated supplemental files already in this directory; it never changes or deletes those raw files.
 
 ## Website example
 
 ![Stock Valuation Lens showing the historical valuation chart for Apple](docs/stock-valuation-lens-example.png)
 
-The application runs entirely on your machine. Search for a company, switch between reported per-share metrics, change the time window, compare market price with the formula reference, and export the visible data as CSV or PNG.
+The application runs entirely on your machine and opens Apple as the initial example when AAPL data is available. Search for another company, switch between reported per-share metrics, toggle the independent dividend overlay, change the time window, and export the visible data as CSV or PNG.
 
 ## Repository data policy
 
@@ -16,6 +16,7 @@ Large downloaded and generated data is intentionally excluded from Git. The `.gi
 
 - Annual `10-K`/`10-K/A` fact extraction with duration checks, restatement deduplication, retroactive standard-taxonomy stock-split normalization, and SEC tag/accession provenance.
 - Basic and diluted EPS from reported facts only.
+- Annual common-stock dividends per share from reported facts, with filing provenance, split normalization, an independent chart toggle, and a dedicated right-hand scale.
 - Simple FCF = operating cash flow − cash capex, plus FCF/share when diluted weighted-average shares are available.
 - Weekly Stooq downsampling, ETF exclusion, ticker/CIK matching, freshness metadata, and a JSON import audit.
 - Curated non-SEC issuer support with local market-price and annual-report provenance. The included `MC.PA` record covers LVMH on Euronext Paris in EUR.
@@ -74,7 +75,7 @@ Use `--force` to atomically replace an existing derived database. Source files r
 python3 run_app.py
 ```
 
-Open <http://127.0.0.1:8765>. The server binds only to the local loopback interface.
+Open <http://127.0.0.1:8765>. Apple loads as the initial example when AAPL is present in the database. The server binds only to the local loopback interface.
 
 ## Test
 

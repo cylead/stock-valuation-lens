@@ -88,6 +88,7 @@ class ImporterIntegrationTests(unittest.TestCase):
         basic = [annual_fact(start, end, value, end[:4] + "-03-01") for (start, end), value in zip(periods, [1.0, 1.2, 1.5])]
         basic.append(annual_fact("2022-01-01", "2022-12-31", 1.1, "2024-03-01", "0000000000-24-000002"))
         diluted = [annual_fact(start, end, value, end[:4] + "-03-01") for (start, end), value in zip(periods, [0.9, 1.1, 1.4])]
+        dividends = [annual_fact(start, end, value, end[:4] + "-03-01") for (start, end), value in zip(periods, [0.2, 0.24, 0.3])]
         ocf = [annual_fact(start, end, value, end[:4] + "-03-01") for (start, end), value in zip(periods, [100, 120, 150])]
         capex = [annual_fact(start, end, value, end[:4] + "-03-01") for (start, end), value in zip(periods, [20, 25, 30])]
         shares = [annual_fact(start, end, 10, end[:4] + "-03-01") for start, end in periods]
@@ -98,6 +99,7 @@ class ImporterIntegrationTests(unittest.TestCase):
                 "us-gaap": {
                     "EarningsPerShareBasic": {"units": {"USD/shares": basic}},
                     "EarningsPerShareDiluted": {"units": {"USD/shares": diluted}},
+                    "CommonStockDividendsPerShareDeclared": {"units": {"USD/shares": dividends}},
                     "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": ocf}},
                     "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": capex}},
                     "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares": shares}},
@@ -114,6 +116,7 @@ class ImporterIntegrationTests(unittest.TestCase):
         rows = extract_fundamentals(self.fixture_facts(), audit)
         first = next(row for row in rows if row["period_end"] == "2022-12-31")
         self.assertEqual(first["basic_eps"], 1.1)
+        self.assertEqual(first["dividend_per_share"], 0.2)
         self.assertGreater(audit["summary"]["duplicateFactsResolved"], 0)
 
     def test_per_share_facts_are_retroactively_split_adjusted_once(self):
@@ -125,6 +128,13 @@ class ImporterIntegrationTests(unittest.TestCase):
                             "USD/shares": [
                                 annual_fact("2021-01-01", "2021-12-31", 4, "2022-03-01"),
                                 annual_fact("2022-01-01", "2022-12-31", 2.5, "2024-03-01"),
+                            ]
+                        }
+                    },
+                    "CommonStockDividendsPerShareDeclared": {
+                        "units": {
+                            "USD/shares": [
+                                annual_fact("2021-01-01", "2021-12-31", 1, "2022-03-01"),
                             ]
                         }
                     },
@@ -141,11 +151,32 @@ class ImporterIntegrationTests(unittest.TestCase):
         audit = {"summary": {"duplicateFactsResolved": 0, "splitAdjustmentsApplied": 0}}
         rows = extract_fundamentals(payload, audit)
         self.assertEqual(rows[0]["diluted_eps"], 2)
+        self.assertEqual(rows[0]["dividend_per_share"], 0.5)
         self.assertEqual(rows[1]["diluted_eps"], 2.5)
         source = json.loads(rows[0]["diluted_source"])
         self.assertEqual(source["reportedValue"], 4)
         self.assertEqual(source["splitAdjustments"][0]["ratio"], 2)
-        self.assertEqual(audit["summary"]["splitAdjustmentsApplied"], 1)
+        self.assertEqual(audit["summary"]["splitAdjustmentsApplied"], 2)
+
+    def test_cash_paid_dividend_is_used_when_declared_fact_is_unavailable(self):
+        payload = {
+            "facts": {
+                "us-gaap": {
+                    "CommonStockDividendsPerShareCashPaid": {
+                        "units": {
+                            "USD/shares": [
+                                annual_fact("2024-01-01", "2024-12-31", 0.4, "2025-03-01"),
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+        audit = {"summary": {"duplicateFactsResolved": 0, "splitAdjustmentsApplied": 0}}
+        rows = extract_fundamentals(payload, audit)
+        self.assertEqual(rows[0]["dividend_per_share"], 0.4)
+        source = json.loads(rows[0]["dividend_source"])
+        self.assertEqual(source["tag"], "CommonStockDividendsPerShareCashPaid")
 
     def test_full_build_and_chart_payload(self):
         database = os.path.join(self.root, "app.sqlite3")
@@ -161,16 +192,20 @@ class ImporterIntegrationTests(unittest.TestCase):
             split_prices_path=self.split,
         )
         self.assertEqual(audit["summary"]["matchedCompanies"], 1)
+        self.assertEqual(audit["summary"]["companiesWithDividendPerShare"], 1)
         self.assertEqual(audit["summary"]["companiesWithFcfPerShare"], 1)
         self.assertEqual(audit["summary"]["companiesWithSplitPrices"], 1)
         with sqlite3.connect(database) as connection:
             connection.row_factory = sqlite3.Row
             company = connection.execute("SELECT * FROM companies WHERE ticker='TEST'").fetchone()
             self.assertTrue(company["has_diluted_eps"])
+            self.assertTrue(company["has_dividend_per_share"])
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM price_weekly").fetchone()[0], 5)
             payload = build_chart_payload(connection, "TEST", "fcf_per_share")
             self.assertEqual(payload["company"]["ticker"], "TEST")
             self.assertEqual(len(payload["fundamentals"]), 3)
+            self.assertEqual([row["value"] for row in payload["dividendSeries"]], [0.2, 0.24, 0.3])
+            self.assertTrue(payload["company"]["availability"]["dividend_per_share"])
             self.assertIsNotNone(payload["valuation"]["formulaMultiple"])
             results = search_companies(connection, "Test")
             self.assertEqual(results[0]["ticker"], "TEST")
@@ -234,11 +269,13 @@ class ImporterIntegrationTests(unittest.TestCase):
                                 {
                                     "periodEnd": "2023-12-31",
                                     "basicEps": 20.0,
+                                    "dividendPerShare": 13.0,
                                     "source": {"label": "Test report"},
                                 },
                                 {
                                     "periodEnd": "2024-12-31",
                                     "basicEps": 25.0,
+                                    "dividendPerShare": 14.0,
                                     "source": {"label": "Test report"},
                                 },
                             ],
@@ -264,10 +301,12 @@ class ImporterIntegrationTests(unittest.TestCase):
             self.assertEqual(company["currency"], "EUR")
             self.assertFalse(company["is_sec_filer"])
             self.assertTrue(company["has_basic_eps"])
+            self.assertTrue(company["has_dividend_per_share"])
             self.assertTrue(company["has_split_price"])
             payload = build_chart_payload(connection, "MC.PA", "eps_basic")
             self.assertEqual(len(payload["fundamentals"]), 2)
             self.assertEqual(payload["fundamentals"][-1]["value"], 25.0)
+            self.assertEqual(payload["dividendSeries"][-1]["value"], 14.0)
             self.assertEqual(payload["priceSeries"][-1]["splitClose"], 600.0)
 
 
