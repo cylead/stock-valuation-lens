@@ -145,6 +145,37 @@ def _normalize_range(minimum, maximum, start=None, end=None):
     return start_date.isoformat(), end_date.isoformat()
 
 
+def _dividend_yield_series(dividend_history, price_series, use_split_prices):
+    """Calculate weekly trailing reported dividend yield percentages."""
+    result = []
+    dividend_index = 0
+    current = None
+    price_key = "splitClose" if use_split_prices else "adjustedClose"
+    price_type = "split_only_close" if use_split_prices else "stooq_adjusted_close"
+    for price_row in price_series:
+        while (
+            dividend_index < len(dividend_history)
+            and dividend_history[dividend_index]["date"] <= price_row["date"]
+        ):
+            current = dividend_history[dividend_index]
+            dividend_index += 1
+        price = price_row.get(price_key)
+        if current is None or price is None or price <= 0 or current["value"] < 0:
+            continue
+        result.append(
+            {
+                "date": price_row["date"],
+                "value": current["value"] / price * 100.0,
+                "dividendPerShare": current["value"],
+                "dividendDate": current["date"],
+                "price": price,
+                "priceType": price_type,
+                "source": current["source"],
+            }
+        )
+    return result
+
+
 def build_chart_payload(connection, ticker, metric="eps_diluted", start=None, end=None, custom_multiple=None):
     ticker = normalize_ticker(ticker)
     if metric not in METRICS:
@@ -198,6 +229,24 @@ def build_chart_payload(connection, ticker, metric="eps_diluted", start=None, en
         }
         for row in rows if row["dividend_per_share"] is not None
     ]
+    dividend_params = [company["cik"]]
+    dividend_where = "WHERE cik=? AND dividend_per_share IS NOT NULL"
+    if end:
+        dividend_where += " AND period_end<=?"
+        dividend_params.append(end)
+    dividend_rows = connection.execute(
+        "SELECT period_end,dividend_per_share,dividend_source FROM fundamentals "
+        + dividend_where + " ORDER BY period_end",
+        tuple(dividend_params),
+    ).fetchall()
+    dividend_history = [
+        {
+            "date": row["period_end"],
+            "value": row["dividend_per_share"],
+            "source": _json_source(row["dividend_source"]),
+        }
+        for row in dividend_rows
+    ]
 
     date_where = ""
     date_params = [ticker, ticker]
@@ -215,6 +264,11 @@ def build_chart_payload(connection, ticker, metric="eps_diluted", start=None, en
         {"date": row["date"], "splitClose": row["close"], "adjustedClose": row["adjusted_close"]}
         for row in price_rows
     ]
+    dividend_yield_series = _dividend_yield_series(
+        dividend_history,
+        price_series,
+        company["availability"]["split_price"],
+    )
     valuation = valuation_summary(fundamentals, custom_multiple=custom_multiple)
     warnings = list(company["availabilityNotes"])
     if not fundamentals:
@@ -227,6 +281,7 @@ def build_chart_payload(connection, ticker, metric="eps_diluted", start=None, en
         "bounds": {"minimum": minimum, "maximum": maximum, "start": start, "end": end},
         "fundamentals": fundamentals,
         "dividendSeries": dividend_series,
+        "dividendYieldSeries": dividend_yield_series,
         "priceSeries": price_series,
         "valuation": valuation,
         "warnings": list(dict.fromkeys(warnings)),

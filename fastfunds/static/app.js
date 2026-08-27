@@ -14,7 +14,7 @@ const state = {
   data: null,
   range: null,
   selection: [],
-  visibility: { price: true, adjusted: true, fair: true, dividend: true },
+  visibility: { price: true, adjusted: true, fair: true, dividend: false },
   chartLayout: null,
   brushLayout: null,
   chartDrag: null,
@@ -113,7 +113,7 @@ function updateCompanyHeader() {
   dividendLegend.disabled = !company.availability.dividend_per_share;
   dividendLegend.classList.toggle("on", company.availability.dividend_per_share && state.visibility.dividend);
   dividendLegend.title = company.availability.dividend_per_share
-    ? "Show or hide reported annual dividends per share."
+    ? "Show or hide the trailing reported dividend-yield curve."
     : "No reported annual dividend per share is available for this company.";
 }
 
@@ -344,7 +344,7 @@ function renderChart() {
   target.setAttribute("viewBox", `0 0 ${width} ${height}`);
   const prices = state.data.priceSeries;
   const valuations = state.data.valuation.valuationPoints;
-  const dividends = state.data.dividendSeries || [];
+  const dividends = state.data.dividendYieldSeries || [];
   const hasCurrentFormula = formulaServiceCurrent();
   const hasSplit = prices.some((row) => row.splitClose !== null);
   const showDividends = state.visibility.dividend && dividends.length > 0;
@@ -385,13 +385,13 @@ function renderChart() {
   if (showDividends) {
     for (let index = 0; index <= 5; index += 1) {
       const value = (dividendMax * index) / 5;
-      addText(target, plot.right + 10, dividendY(value) + 4, compact(value), {
+      addText(target, plot.right + 10, dividendY(value) + 4, fmt(value, 2) + "%", {
         fill: "#76508f",
         "text-anchor": "start",
       });
     }
     const dividendAxisMiddle = (plot.top + plot.bottom) / 2;
-    addText(target, width - 8, dividendAxisMiddle, "Dividend / share", {
+    addText(target, width - 8, dividendAxisMiddle, "Dividend yield (%)", {
       fill: "#76508f",
       "font-size": 10,
       "text-anchor": "middle",
@@ -434,18 +434,6 @@ function renderChart() {
       "stroke-width": 2.4,
       "stroke-linejoin": "round",
     }));
-    dividends.forEach((point) => {
-      const marker = svg("circle", {
-        cx: x(point.date),
-        cy: dividendY(point.value),
-        r: 3.5,
-        fill: "#fffdf7",
-        stroke: "#76508f",
-        "stroke-width": 2,
-      });
-      marker.appendChild(svg("title", {}, `${point.date}: dividend/share ${fmt(point.value, 3)} · ${sourceLabel(point.source)}`));
-      target.appendChild(marker);
-    });
   }
   valuations.forEach((point) => {
     if (hasCurrentFormula && point.fairValue !== null && state.visibility.fair) {
@@ -498,7 +486,7 @@ function renderTooltip(event) {
     if (!best) return item;
     return Math.abs(time(item.date) - time(point.date)) < Math.abs(time(best.date) - time(point.date)) ? item : best;
   }, null);
-  const dividend = (state.data.dividendSeries || []).reduce((best, item) => {
+  const dividend = (state.data.dividendYieldSeries || []).reduce((best, item) => {
     if (!best) return item;
     return Math.abs(time(item.date) - time(point.date)) < Math.abs(time(best.date) - time(point.date)) ? item : best;
   }, null);
@@ -512,7 +500,7 @@ function renderTooltip(event) {
     [state.company.availability.split_price ? "Split-only close" : "Stooq close (approx.)", point.splitClose ?? point.adjustedClose],
     ["Stooq adjusted", point.adjustedClose],
     [state.data.metric.label, valuation?.metricValue],
-    ["Dividend / share", state.visibility.dividend ? dividend?.value : null],
+    ["Dividend yield", state.visibility.dividend ? dividend?.value : null, dividend ? fmt(dividend.value, 2) + "%" : null],
     [priceMultipleLabel, priceMultiple, priceMultiple === null ? null : `${fmt(priceMultiple, 1)}×`],
     ["Formula value", formulaServiceCurrent() ? valuation?.fairValue : null],
   ];
@@ -787,13 +775,20 @@ function renderTable() {
   const body = $("#fundamentals-body");
   body.textContent = "";
   const rows = [...state.data.fundamentals].reverse();
+  const dividendYieldByPeriod = new Map();
+  (state.data.dividendYieldSeries || []).forEach((point) => {
+    if (!dividendYieldByPeriod.has(point.dividendDate)) {
+      dividendYieldByPeriod.set(point.dividendDate, point.value);
+    }
+  });
   $("#table-count").textContent = `${rows.filter((row) => row.value !== null).length} observations`;
   rows.forEach((row) => {
     const tr = document.createElement("tr");
+    const dividendYield = dividendYieldByPeriod.get(row.period_end);
     const values = [
       row.period_end,
       compact(row.value),
-      compact(row.dividendPerShare),
+      dividendYield === undefined ? "—" : fmt(dividendYield, 2) + "%",
       compact(row.fcf),
       sourceLabel(row.source),
     ];
@@ -837,8 +832,13 @@ function exportCsv() {
     lines.push([state.metric, row.date, row.metricValue ?? "", "reported annual metric"]);
     if (hasCurrentFormula && row.fairValue !== null) lines.push(["formula_value", row.date, row.fairValue, `multiple=${state.data.valuation.appliedMultiple}`]);
   });
-  (state.data.dividendSeries || []).forEach((row) => {
-    lines.push(["dividend_per_share", row.date, row.value, sourceLabel(row.source)]);
+  (state.data.dividendYieldSeries || []).forEach((row) => {
+    const details = "dividend_per_share=" + row.dividendPerShare +
+      ";dividend_period=" + row.dividendDate +
+      ";price=" + row.price +
+      ";price_type=" + row.priceType +
+      ";source=" + sourceLabel(row.source);
+    lines.push(["dividend_yield_percent", row.date, row.value, details]);
   });
   const escaped = lines.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
   downloadBlob(new Blob([escaped], { type: "text/csv;charset=utf-8" }), `${state.ticker}-${state.metric}-${state.range.start}-${state.range.end}.csv`);

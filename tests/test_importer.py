@@ -205,6 +205,18 @@ class ImporterIntegrationTests(unittest.TestCase):
             self.assertEqual(payload["company"]["ticker"], "TEST")
             self.assertEqual(len(payload["fundamentals"]), 3)
             self.assertEqual([row["value"] for row in payload["dividendSeries"]], [0.2, 0.24, 0.3])
+            yields = payload["dividendYieldSeries"]
+            self.assertEqual([row["date"] for row in yields], [
+                "2023-01-06", "2023-12-29", "2024-12-30",
+            ])
+            self.assertAlmostEqual(yields[-1]["value"], 0.96)
+            self.assertEqual(yields[-1]["dividendPerShare"], 0.24)
+            self.assertEqual(yields[-1]["priceType"], "split_only_close")
+            ranged = build_chart_payload(
+                connection, "TEST", "fcf_per_share", start="2024-01-01", end="2024-12-31"
+            )
+            self.assertEqual(len(ranged["dividendYieldSeries"]), 1)
+            self.assertAlmostEqual(ranged["dividendYieldSeries"][0]["value"], 0.96)
             self.assertTrue(payload["company"]["availability"]["dividend_per_share"])
             self.assertIsNotNone(payload["valuation"]["formulaMultiple"])
             results = search_companies(connection, "Test")
@@ -307,6 +319,7 @@ class ImporterIntegrationTests(unittest.TestCase):
             self.assertEqual(len(payload["fundamentals"]), 2)
             self.assertEqual(payload["fundamentals"][-1]["value"], 25.0)
             self.assertEqual(payload["dividendSeries"][-1]["value"], 14.0)
+            self.assertAlmostEqual(payload["dividendYieldSeries"][-1]["value"], 14.0 / 600.0 * 100.0)
             self.assertEqual(payload["priceSeries"][-1]["splitClose"], 600.0)
 
 
