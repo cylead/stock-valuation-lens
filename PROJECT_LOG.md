@@ -13,6 +13,13 @@ Major updates to Stock Valuation Lens are recorded here, newest first. See [AGEN
 - **References:** Relevant issue, commit, test, or file links. Omit if none.
 -->
 
+## 2026-08-27 — Simplified dividend details in the chart tooltip
+
+- **Summary:** Reduced the floating chart tooltip's dividend information to the fiscal-year dividend yield.
+- **Impact:** The tooltip no longer shows annual dividend/share or its reference close; the annual history, exports, calculations, and API data are unchanged.
+- **Verification:** Checked the tooltip rendering paths and ran the automated test suite.
+- **References:** `fastfunds/static/app.js`.
+
 ## 2026-08-27 — Changed dividend yield to an annual view
 
 - **Summary:** Replaced the weekly trailing dividend-yield curve with one fiscal-year-end observation per reported annual dividend, including the annual dividend/share and its reference price metadata.

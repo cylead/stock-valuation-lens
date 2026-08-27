@@ -519,9 +519,7 @@ function renderTooltip(event) {
     [state.company.availability.split_price ? "Split-only close" : "Stooq close (approx.)", point.splitClose ?? point.adjustedClose],
     ["Stooq adjusted", point.adjustedClose],
     [state.data.metric.label, valuation?.metricValue],
-    [dividend?.fiscalYear ? `FY${dividend.fiscalYear} annual dividend / share` : "Annual dividend / share", state.visibility.dividend ? dividend?.dividendPerShare : null],
     [dividend?.fiscalYear ? `FY${dividend.fiscalYear} year-end dividend yield` : "Annual dividend yield", state.visibility.dividend ? dividend?.value : null, dividend?.value === null || dividend?.value === undefined ? null : fmt(dividend.value, 2) + "%"],
-    [dividend?.priceDate ? `Reference close · ${dividend.priceDate}` : "Reference close", state.visibility.dividend ? dividend?.price : null, dividend?.price === null || dividend?.price === undefined ? null : `${fmt(dividend.price, 2)}${dividend.priceType === "stooq_adjusted_close" ? " approx." : ""}`],
     [priceMultipleLabel, priceMultiple, priceMultiple === null ? null : `${fmt(priceMultiple, 1)}×`],
     ["Formula value", formulaServiceCurrent() ? valuation?.fairValue : null],
   ];
