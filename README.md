@@ -1,12 +1,12 @@
 # Stock Valuation Lens
 
-Stock Valuation Lens is a local, dependency-free web application for comparing weekly stock prices with annual reported basic EPS, diluted EPS, simple free cash flow per share, and dividend yield. It builds a compact SQLite database from SEC Company Facts, Stooq, and any curated supplemental files already in this directory; it never changes or deletes those raw files.
+Stock Valuation Lens is a local, dependency-free web application for comparing weekly stock prices with annual reported basic EPS, diluted EPS, simple free cash flow per share, and fiscal-year dividend yield. It builds a compact SQLite database from SEC Company Facts, Stooq, and any curated supplemental files already in this directory; it never changes or deletes those raw files.
 
 ## Website example
 
 ![Stock Valuation Lens showing the historical valuation chart for Apple](docs/stock-valuation-lens-example.png)
 
-The application runs entirely on your machine and opens Apple as the initial example when AAPL data is available. Search for another company, switch between reported per-share metrics, turn on the independent dividend-yield overlay, which is off by default, change the time window, and export the visible data as CSV or PNG.
+The application runs entirely on your machine and opens Apple as the initial example when AAPL data is available. Search for another company, switch between reported per-share metrics, turn on the independent annual dividend-yield overlay, which is off by default, change the time window, and export the visible data as CSV or PNG.
 
 ## Repository data policy
 
@@ -16,13 +16,19 @@ Large downloaded and generated data is intentionally excluded from Git. The `.gi
 
 - Annual `10-K`/`10-K/A` fact extraction with duration checks, restatement deduplication, retroactive standard-taxonomy stock-split normalization, and SEC tag/accession provenance.
 - Basic and diluted EPS from reported facts only.
-- Annual common-stock dividends per share from reported facts, with filing provenance and split normalization. The optional dividend-yield curve is off by default and calculates `latest reported annual dividend/share ÷ weekly price × 100` on a dedicated percentage scale.
+- Annual common-stock dividends per share from reported facts, with filing provenance and split normalization. The optional annual dividend-yield curve is off by default and calculates `reported fiscal-year dividend/share ÷ fiscal-year-end price × 100` on a dedicated percentage scale. It uses the last split-only close within the preceding 14 days, falling back to a recent Stooq adjusted close as an approximation.
 - Simple FCF = operating cash flow − cash capex, plus FCF/share when diluted weighted-average shares are available.
 - Weekly Stooq downsampling, ETF exclusion, ticker/CIK matching, freshness metadata, and a JSON import audit.
 - Curated non-SEC issuer support with local market-price and annual-report provenance. The included `MC.PA` record covers LVMH on Euronext Paris in EUR.
 - Formula reference value using `P/E = min(60, 15 × ((1 + CAGR) / 1.10)^(years × 0.6))` (with CAGR and years from the selected annual observations; the duration weight gives long growth runs partial credit), custom P/E capped at 60, 2–20-year/All ranges, draggable brush, zoom, pan, hover details, and CSV/PNG exports.
 
 The project uses only the Python 3.7+ standard library and SQLite. No package installation or internet connection is needed after the two reference inputs have been obtained.
+
+## Project records
+
+- [Project log](PROJECT_LOG.md) records major product, architecture, data, and workflow updates.
+- [Issue log](ISSUE_LOG.md) records non-trivial issues, their solutions, and the reasons those solutions were chosen.
+- [Maintenance rules](AGENTS.md) define when contributors must update each log.
 
 ## Required reference inputs
 
@@ -90,6 +96,6 @@ The tests use temporary fixtures and do not modify the local SEC or Stooq data.
 - SEC Company Facts generally starts around the 2009 XBRL reporting mandate, so many companies have fewer than 20 annual observations.
 - Conventional FCF is often unavailable or not meaningful for banks, REITs, and some foreign filers. Missing metrics are disabled rather than silently synthesized.
 - MC.PA currently supplies basic EPS only. Diluted EPS and FCF/share are intentionally disabled until directly sourced from LVMH's audited statements in the required form.
-- Dividend yield is a trailing reported proxy, not a forward yield. It uses split-only weekly prices when supplied and otherwise uses Stooq adjusted closes as an approximation.
+- Dividend yield is a retrospective fiscal-year measure, not a forward yield or a reconstruction of quarterly payments. Each annual total is divided by the last valid close on or before fiscal year-end; adjusted-price fallbacks are labeled as approximations.
 - The orange line is a transparent valuation reference, not an intrinsic-value claim. The blue line requires validated split-only prices.
 - This is an independent research interface, not investment advice or an exact reproduction of proprietary FAST Graphs calculations.

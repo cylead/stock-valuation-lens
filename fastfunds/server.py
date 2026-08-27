@@ -15,6 +15,7 @@ from .core import METRICS, normalize_ticker, parse_date, valuation_summary
 
 
 STATIC_ROOT = os.path.join(os.path.dirname(__file__), "static")
+ANNUAL_DIVIDEND_PRICE_MAX_AGE_DAYS = 14
 
 
 def _connection(path):
@@ -145,32 +146,56 @@ def _normalize_range(minimum, maximum, start=None, end=None):
     return start_date.isoformat(), end_date.isoformat()
 
 
-def _dividend_yield_series(dividend_history, price_series, use_split_prices):
-    """Calculate weekly trailing reported dividend yield percentages."""
-    result = []
-    dividend_index = 0
-    current = None
-    price_key = "splitClose" if use_split_prices else "adjustedClose"
-    price_type = "split_only_close" if use_split_prices else "stooq_adjusted_close"
-    for price_row in price_series:
-        while (
-            dividend_index < len(dividend_history)
-            and dividend_history[dividend_index]["date"] <= price_row["date"]
-        ):
-            current = dividend_history[dividend_index]
-            dividend_index += 1
+def _latest_eligible_price(price_history, period_end, price_key, max_age_days):
+    """Return the latest positive price shortly before a fiscal period end."""
+    candidate = None
+    for price_row in price_history:
+        if price_row["date"] > period_end:
+            break
         price = price_row.get(price_key)
-        if current is None or price is None or price <= 0 or current["value"] < 0:
-            continue
+        if price is not None and price > 0:
+            candidate = price_row
+    if candidate is None:
+        return None
+    age = (parse_date(period_end) - parse_date(candidate["date"])).days
+    return candidate if age <= max_age_days else None
+
+
+def _annual_dividend_yield_series(
+    dividend_series,
+    price_history,
+    max_age_days=ANNUAL_DIVIDEND_PRICE_MAX_AGE_DAYS,
+):
+    """Calculate one retrospective dividend-yield observation per fiscal year."""
+    result = []
+    for dividend in dividend_series:
+        price_row = _latest_eligible_price(
+            price_history, dividend["date"], "splitClose", max_age_days
+        )
+        price_type = "split_only_close"
+        if price_row is None:
+            price_row = _latest_eligible_price(
+                price_history, dividend["date"], "adjustedClose", max_age_days
+            )
+            price_type = "stooq_adjusted_close"
+        price_key = "splitClose" if price_type == "split_only_close" else "adjustedClose"
+        price = price_row.get(price_key) if price_row else None
+        dividend_value = dividend["value"]
+        yield_value = None
+        if price is not None and dividend_value is not None and dividend_value >= 0:
+            yield_value = dividend_value / price * 100.0
         result.append(
             {
-                "date": price_row["date"],
-                "value": current["value"] / price * 100.0,
-                "dividendPerShare": current["value"],
-                "dividendDate": current["date"],
+                "date": dividend["date"],
+                "fiscalYear": dividend.get("fiscalYear"),
+                "periodEnd": dividend["date"],
+                "value": yield_value,
+                "dividendPerShare": dividend_value,
+                "dividendDate": dividend["date"],
                 "price": price,
-                "priceType": price_type,
-                "source": current["source"],
+                "priceDate": price_row["date"] if price_row else None,
+                "priceType": price_type if price_row else None,
+                "source": dividend["source"],
             }
         )
     return result
@@ -229,45 +254,28 @@ def build_chart_payload(connection, ticker, metric="eps_diluted", start=None, en
         }
         for row in rows if row["dividend_per_share"] is not None
     ]
-    dividend_params = [company["cik"]]
-    dividend_where = "WHERE cik=? AND dividend_per_share IS NOT NULL"
+    date_where = " WHERE dates.date<=?" if end else ""
+    date_params = [ticker, ticker, ticker, ticker]
     if end:
-        dividend_where += " AND period_end<=?"
-        dividend_params.append(end)
-    dividend_rows = connection.execute(
-        "SELECT period_end,dividend_per_share,dividend_source FROM fundamentals "
-        + dividend_where + " ORDER BY period_end",
-        tuple(dividend_params),
-    ).fetchall()
-    dividend_history = [
-        {
-            "date": row["period_end"],
-            "value": row["dividend_per_share"],
-            "source": _json_source(row["dividend_source"]),
-        }
-        for row in dividend_rows
-    ]
-
-    date_where = ""
-    date_params = [ticker, ticker]
-    if start and end:
-        date_where = " WHERE dates.date BETWEEN ? AND ?"
-        date_params.extend([start, end])
+        date_params.append(end)
     price_rows = connection.execute(
         "WITH dates AS (SELECT date FROM price_weekly WHERE ticker=? UNION SELECT date FROM split_weekly WHERE ticker=?) "
         "SELECT dates.date,s.close,a.adjusted_close FROM dates "
         "LEFT JOIN split_weekly s ON s.ticker=? AND s.date=dates.date "
         "LEFT JOIN price_weekly a ON a.ticker=? AND a.date=dates.date" + date_where + " ORDER BY dates.date",
-        tuple(date_params[:2] + [ticker, ticker] + date_params[2:]),
+        tuple(date_params),
     ).fetchall()
-    price_series = [
+    price_history = [
         {"date": row["date"], "splitClose": row["close"], "adjustedClose": row["adjusted_close"]}
         for row in price_rows
     ]
-    dividend_yield_series = _dividend_yield_series(
-        dividend_history,
-        price_series,
-        company["availability"]["split_price"],
+    price_series = [
+        row for row in price_history
+        if (not start or row["date"] >= start) and (not end or row["date"] <= end)
+    ]
+    dividend_yield_series = _annual_dividend_yield_series(
+        dividend_series,
+        price_history,
     )
     valuation = valuation_summary(fundamentals, custom_multiple=custom_multiple)
     warnings = list(company["availabilityNotes"])
@@ -275,6 +283,16 @@ def build_chart_payload(connection, ticker, metric="eps_diluted", start=None, en
         warnings.append("No annual observations for this metric in the selected window.")
     if valuation["cagr"] is None:
         warnings.append("CAGR and formula valuation require at least two positive annual observations.")
+    if any(row["value"] is None for row in dividend_yield_series):
+        warnings.append(
+            "Some annual dividend yields are unavailable because the reported annual dividend "
+            "is invalid or no valid closing price was found within 14 days before fiscal year-end."
+        )
+    if any(row["priceType"] == "stooq_adjusted_close" for row in dividend_yield_series):
+        warnings.append(
+            "Some annual dividend yields use Stooq adjusted closes as an approximation where "
+            "split-only prices are unavailable."
+        )
     return {
         "company": company,
         "metric": {"id": metric, "label": metric_info["label"]},

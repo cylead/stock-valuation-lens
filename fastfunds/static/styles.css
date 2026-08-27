@@ -128,11 +128,12 @@ main { max-width: 1440px; min-height: calc(100vh - 150px); margin: 0 auto; paddi
 .annual-change-empty { margin: 0; padding: 14px; color: var(--muted); background: #f0f1ed; border-radius: 10px; text-align: center; }
 
 .details-grid { display: grid; grid-template-columns: minmax(0,2fr) minmax(280px,1fr); gap: 14px; margin-top: 14px; }
-.fundamentals-card, .methodology { padding: 20px; }
+.fundamentals-card, .methodology { min-width: 0; padding: 20px; }
 .section-heading { margin-bottom: 15px; }
 .pill { padding: 4px 8px; color: var(--green); background: var(--green-soft); border-radius: 999px; font-size: 11px; font-weight: 700; }
 .table-scroll { max-height: 440px; overflow: auto; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.fundamentals-card table { min-width: 780px; }
 th { position: sticky; top: 0; z-index: 2; padding: 9px; color: var(--muted); background: var(--card); font-size: 11px; text-align: right; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--line); }
 th:first-child, th:last-child, td:first-child, td:last-child { text-align: left; }
 td { padding: 10px 9px; text-align: right; border-bottom: 1px solid #eceee9; }

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from fastfunds.importer import build_database, discover_stooq_stocks, extract_fundamentals
-from fastfunds.server import build_chart_payload, search_companies
+from fastfunds.server import _annual_dividend_yield_series, build_chart_payload, search_companies
 
 
 def annual_fact(start, end, value, filed, accession="0000000000-24-000001"):
@@ -20,6 +20,52 @@ def annual_fact(start, end, value, filed, accession="0000000000-24-000001"):
         "form": "10-K",
         "filed": filed,
     }
+
+
+class AnnualDividendYieldTests(unittest.TestCase):
+    def test_annual_yields_prefer_recent_prior_split_prices_and_keep_unavailable_years(self):
+        dividends = [
+            {"date": "2022-12-31", "fiscalYear": 2022, "value": 1.0, "source": {"label": "FY22"}},
+            {"date": "2023-12-31", "fiscalYear": 2023, "value": 1.0, "source": {"label": "FY23"}},
+            {"date": "2024-12-31", "fiscalYear": 2024, "value": 2.0, "source": {"label": "FY24"}},
+            {"date": "2025-12-31", "fiscalYear": 2025, "value": 0.0, "source": {"label": "FY25"}},
+            {"date": "2026-12-31", "fiscalYear": 2026, "value": -1.0, "source": {"label": "FY26"}},
+            {"date": "2027-12-31", "fiscalYear": 2027, "value": 3.0, "source": {"label": "FY27"}},
+            {"date": "2028-12-31", "fiscalYear": 2028, "value": 4.0, "source": {"label": "FY28"}},
+            {"date": "2029-12-31", "fiscalYear": 2029, "value": None, "source": {"label": "FY29"}},
+        ]
+        prices = [
+            # This is after FY22 and must never be used for that year's yield.
+            {"date": "2023-01-02", "splitClose": 10.0, "adjustedClose": 10.0},
+            {"date": "2023-12-29", "splitClose": 50.0, "adjustedClose": 40.0},
+            # The split-only price is stale, so the recent adjusted close is used.
+            {"date": "2024-12-01", "splitClose": 50.0, "adjustedClose": 50.0},
+            {"date": "2024-12-30", "splitClose": None, "adjustedClose": 100.0},
+            {"date": "2025-12-30", "splitClose": 20.0, "adjustedClose": 20.0},
+            {"date": "2026-12-30", "splitClose": 20.0, "adjustedClose": 20.0},
+            # An invalid split price falls back to the adjusted close.
+            {"date": "2028-12-30", "splitClose": 0.0, "adjustedClose": 80.0},
+            {"date": "2029-12-31", "splitClose": 80.0, "adjustedClose": 80.0},
+        ]
+
+        result = _annual_dividend_yield_series(dividends, prices)
+
+        self.assertEqual(len(result), len(dividends))
+        self.assertIsNone(result[0]["value"])
+        self.assertIsNone(result[0]["priceDate"])
+        self.assertAlmostEqual(result[1]["value"], 2.0)
+        self.assertEqual(result[1]["priceType"], "split_only_close")
+        self.assertEqual(result[1]["priceDate"], "2023-12-29")
+        self.assertAlmostEqual(result[2]["value"], 2.0)
+        self.assertEqual(result[2]["priceType"], "stooq_adjusted_close")
+        self.assertEqual(result[2]["priceDate"], "2024-12-30")
+        self.assertEqual(result[3]["value"], 0.0)
+        self.assertIsNone(result[4]["value"])
+        self.assertIsNone(result[5]["value"])
+        self.assertIsNone(result[5]["priceDate"])
+        self.assertAlmostEqual(result[6]["value"], 5.0)
+        self.assertEqual(result[6]["priceType"], "stooq_adjusted_close")
+        self.assertIsNone(result[7]["value"])
 
 
 class ImporterIntegrationTests(unittest.TestCase):
@@ -207,16 +253,21 @@ class ImporterIntegrationTests(unittest.TestCase):
             self.assertEqual([row["value"] for row in payload["dividendSeries"]], [0.2, 0.24, 0.3])
             yields = payload["dividendYieldSeries"]
             self.assertEqual([row["date"] for row in yields], [
-                "2023-01-06", "2023-12-29", "2024-12-30",
+                "2022-12-31", "2023-12-31", "2024-12-31",
             ])
-            self.assertAlmostEqual(yields[-1]["value"], 0.96)
-            self.assertEqual(yields[-1]["dividendPerShare"], 0.24)
+            self.assertAlmostEqual(yields[0]["value"], 2.5)
+            self.assertAlmostEqual(yields[1]["value"], 1.2)
+            self.assertAlmostEqual(yields[2]["value"], 1.2)
+            self.assertEqual(yields[-1]["dividendPerShare"], 0.3)
+            self.assertEqual(yields[-1]["periodEnd"], "2024-12-31")
+            self.assertEqual(yields[-1]["priceDate"], "2024-12-30")
             self.assertEqual(yields[-1]["priceType"], "split_only_close")
             ranged = build_chart_payload(
                 connection, "TEST", "fcf_per_share", start="2024-01-01", end="2024-12-31"
             )
             self.assertEqual(len(ranged["dividendYieldSeries"]), 1)
-            self.assertAlmostEqual(ranged["dividendYieldSeries"][0]["value"], 0.96)
+            self.assertAlmostEqual(ranged["dividendYieldSeries"][0]["value"], 1.2)
+            self.assertEqual(ranged["dividendYieldSeries"][0]["priceDate"], "2024-12-30")
             self.assertTrue(payload["company"]["availability"]["dividend_per_share"])
             self.assertIsNotNone(payload["valuation"]["formulaMultiple"])
             results = search_companies(connection, "Test")
@@ -319,7 +370,9 @@ class ImporterIntegrationTests(unittest.TestCase):
             self.assertEqual(len(payload["fundamentals"]), 2)
             self.assertEqual(payload["fundamentals"][-1]["value"], 25.0)
             self.assertEqual(payload["dividendSeries"][-1]["value"], 14.0)
-            self.assertAlmostEqual(payload["dividendYieldSeries"][-1]["value"], 14.0 / 600.0 * 100.0)
+            self.assertAlmostEqual(payload["dividendYieldSeries"][0]["value"], 13.0 / 700.0 * 100.0)
+            self.assertAlmostEqual(payload["dividendYieldSeries"][-1]["value"], 14.0 / 650.0 * 100.0)
+            self.assertEqual(payload["dividendYieldSeries"][-1]["priceDate"], "2024-12-30")
             self.assertEqual(payload["priceSeries"][-1]["splitClose"], 600.0)
 
 
