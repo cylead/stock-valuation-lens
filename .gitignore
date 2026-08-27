@@ -1,0 +1,19 @@
+# Python and operating-system artifacts
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local raw market and SEC data (too large for Git)
+companyfacts/
+daily/
+company_tickers_exchange.json
+
+# Derived databases and import reports
+app_data/
+
+# Local environments and editor settings
+.venv/
+venv/
+.env
+.idea/
+.vscode/

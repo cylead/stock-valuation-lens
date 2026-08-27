@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Local historical earnings and free-cash-flow analysis">
+  <title>Stock Valuation Lens</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="Stock Valuation Lens home">
+      <span class="brand-mark">SV</span>
+      <span><strong>Stock Valuation Lens</strong><small>Price follows the business</small></span>
+    </a>
+    <div class="search-shell">
+      <label class="sr-only" for="company-search">Search by ticker or company</label>
+      <input id="company-search" autocomplete="off" placeholder="Search ticker or company…" aria-controls="search-results">
+      <div id="search-results" class="search-results" role="listbox" hidden></div>
+    </div>
+    <div id="source-freshness" class="freshness">Local data</div>
+  </header>
+
+  <main>
+    <section id="welcome" class="welcome card">
+      <p class="eyebrow">LOCAL FUNDAMENTAL ANALYSIS</p>
+      <h1>See price in the context of earnings and cash generation.</h1>
+      <p>Search a supported listed company to compare weekly price with reported annual EPS or free cash flow per share. Your source files remain local and unchanged.</p>
+      <div class="welcome-grid">
+        <div><b>GAAP facts</b><span>Auditable 10-K values and filing provenance</span></div>
+        <div><b>Dynamic valuation</b><span>Selected-window formula valuations</span></div>
+        <div><b>Time-aware</b><span>Range presets, brush, pan, zoom, and returns</span></div>
+      </div>
+    </section>
+
+    <section id="workspace" hidden>
+      <div class="company-row">
+        <div>
+          <p class="eyebrow" id="company-exchange"></p>
+          <h1><span id="company-ticker"></span> <span id="company-name"></span></h1>
+        </div>
+        <div id="availability-notes" class="availability"></div>
+      </div>
+
+      <section class="control-strip card" aria-label="Chart controls">
+        <div class="control-group">
+          <span class="control-label">Metric</span>
+          <div id="metric-buttons" class="segmented">
+            <button type="button" data-metric="eps_diluted">Diluted EPS</button>
+            <button type="button" data-metric="eps_basic">Basic EPS</button>
+            <button type="button" data-metric="fcf_per_share">FCF / share</button>
+          </div>
+        </div>
+        <div class="control-group timeframe-group">
+          <span class="control-label">Timeframe</span>
+          <div id="time-buttons" class="segmented compact">
+            <button type="button" data-years="2">2Y</button>
+            <button type="button" data-years="3">3Y</button>
+            <button type="button" data-years="5">5Y</button>
+            <button type="button" data-years="10">10Y</button>
+            <button type="button" data-years="15" class="active">15Y</button>
+            <button type="button" data-years="20">20Y</button>
+            <button type="button" data-years="all">All</button>
+          </div>
+        </div>
+        <div class="control-group multiple-group">
+          <label class="control-label" for="custom-multiple">Custom multiple</label>
+          <div class="input-row">
+            <input id="custom-multiple" type="number" min="0.1" max="60" step="0.1" placeholder="Formula P/E (max 60×)">
+            <button id="reset-multiple" class="text-button" type="button">Reset</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="stats-grid" aria-label="Valuation summary">
+        <div class="stat card"><span>Selected metric CAGR</span><strong id="stat-cagr">—</strong><small id="stat-years">Selected window</small></div>
+        <div class="stat card orange"><span>Formula P/E</span><strong id="stat-fair">—</strong><small id="stat-formula">Formula and custom P/E capped at 60×</small></div>
+      </section>
+
+      <section class="chart-card card">
+        <div class="chart-heading">
+          <div>
+            <h2 id="chart-title">Historical valuation</h2>
+            <p id="chart-subtitle">Weekly price and annual fundamentals</p>
+          </div>
+          <div class="chart-actions">
+            <button id="reset-view" type="button" title="Reset chart window">Reset view</button>
+            <button id="clear-selection" type="button" title="Clear return selection">Clear points</button>
+            <button id="export-csv" type="button">CSV</button>
+            <button id="export-png" type="button">PNG</button>
+          </div>
+        </div>
+        <div id="legend" class="legend">
+          <button type="button" data-series="price" class="on"><i class="legend-price"></i>Split-only price</button>
+          <button type="button" data-series="adjusted" class="on"><i class="legend-adjusted"></i>Stooq adjusted</button>
+          <button type="button" data-series="fair" class="on"><i class="legend-fair"></i>Formula value</button>
+        </div>
+        <div id="chart-wrap" class="chart-wrap">
+          <svg id="main-chart" role="img" aria-label="Historical valuation chart"></svg>
+          <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+          <div id="chart-empty" class="chart-empty" hidden>No chart data in this window.</div>
+        </div>
+        <div class="brush-label"><span id="range-start">—</span><span>Drag either handle to change the analysis window</span><span id="range-end">—</span></div>
+        <svg id="range-chart" class="range-chart" role="img" aria-label="Time range selector"></svg>
+        <div id="selection-result" class="selection-result" hidden></div>
+        <div id="chart-warnings" class="warnings"></div>
+      </section>
+
+      <section class="annual-change-card card" aria-labelledby="annual-change-title">
+        <div class="annual-change-heading">
+          <div>
+            <p class="eyebrow">YEAR-OVER-YEAR</p>
+            <h2 id="annual-change-title">Annual metric change</h2>
+            <p id="annual-change-subtitle">Change from the previous reported fiscal year</p>
+          </div>
+          <div class="change-legend" aria-label="Change colors">
+            <span><i class="positive"></i>Increase</span>
+            <span><i class="negative"></i>Decrease</span>
+          </div>
+        </div>
+        <div id="annual-change-list" class="annual-change-list" role="list" aria-live="polite"></div>
+      </section>
+
+      <section class="details-grid">
+        <div class="card fundamentals-card">
+          <div class="section-heading">
+            <div><p class="eyebrow">REPORTED FACTS</p><h2>Annual history</h2></div>
+            <span id="table-count" class="pill"></span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Fiscal end</th><th id="metric-column-heading">Value</th><th>FCF total</th><th>Source</th></tr></thead>
+              <tbody id="fundamentals-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <aside class="card methodology">
+          <p class="eyebrow">HOW TO READ IT</p>
+          <h2>Reference, not a price target</h2>
+          <p>The orange line multiplies the selected per-share metric by <span class="formula">P/E = 15 × [(1 + CAGR) ÷ 1.10]<sup>years × 0.6</sup></span>, capped at 60×. CAGR and years use the first and last positive annual observations within the active window; the 0.6 weight gives long historical growth runs partial credit.</p>
+          <ul>
+            <li>Black below orange: price is below the formula reference.</li>
+            <li>Negative values create gaps instead of misleading ratios.</li>
+          </ul>
+          <p class="disclaimer">This is an independent research tool, not investment advice or an exact reproduction of proprietary FAST Graphs calculations.</p>
+        </aside>
+      </section>
+    </section>
+  </main>
+
+  <footer>Stock Valuation Lens · Local SEC, annual-report, and market-price analysis</footer>
+  <script src="/app.js" defer></script>
+</body>
+</html>

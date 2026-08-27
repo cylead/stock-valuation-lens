@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "companies": [
+    {
+      "ticker": "MC.PA",
+      "entityId": -1,
+      "name": "LVMH Moët Hennessy - Louis Vuitton, Société Européenne",
+      "exchange": "Euronext Paris",
+      "currency": "EUR",
+      "priceFile": "mc.pa.csv",
+      "priceSource": "Yahoo Finance historical close",
+      "reportingSource": "LVMH annual reports",
+      "fundamentals": [
+        {
+          "periodStart": "2015-01-01",
+          "periodEnd": "2015-12-31",
+          "basicEps": 7.11,
+          "source": {
+            "label": "LVMH 2016 Annual Report · basic EPS in EUR",
+            "url": "https://www.annualreports.com/HostedData/AnnualReportArchive/l/OTC_LVMUY_2016.pdf",
+            "page": 136,
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        },
+        {
+          "periodStart": "2016-01-01",
+          "periodEnd": "2016-12-31",
+          "basicEps": 7.92,
+          "source": {
+            "label": "LVMH 2016 Annual Report · basic EPS in EUR",
+            "url": "https://www.annualreports.com/HostedData/AnnualReportArchive/l/OTC_LVMUY_2016.pdf",
+            "page": 136,
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        },
+        {
+          "periodStart": "2017-01-01",
+          "periodEnd": "2017-12-31",
+          "basicEps": 10.68,
+          "source": {
+            "label": "LVMH 2019 Annual Report · basic EPS in EUR",
+            "url": "https://www.annualreports.com/HostedData/AnnualReportArchive/l/OTC_LVMUY_2019.pdf",
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        },
+        {
+          "periodStart": "2018-01-01",
+          "periodEnd": "2018-12-31",
+          "basicEps": 12.64,
+          "source": {
+            "label": "LVMH 2019 Annual Report · basic EPS in EUR",
+            "url": "https://www.annualreports.com/HostedData/AnnualReportArchive/l/OTC_LVMUY_2019.pdf",
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        },
+        {
+          "periodStart": "2019-01-01",
+          "periodEnd": "2019-12-31",
+          "basicEps": 14.25,
+          "source": {
+            "label": "LVMH 2019 Annual Report · basic EPS in EUR",
+            "url": "https://www.annualreports.com/HostedData/AnnualReportArchive/l/OTC_LVMUY_2019.pdf",
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        },
+        {
+          "periodStart": "2020-01-01",
+          "periodEnd": "2020-12-31",
+          "basicEps": 9.33,
+          "source": {
+            "label": "LVMH 2022 Annual Report · basic EPS in EUR",
+            "url": "https://www.annualreports.com/HostedData/AnnualReportArchive/l/OTC_LVMUY_2022.pdf",
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        },
+        {
+          "periodStart": "2021-01-01",
+          "periodEnd": "2021-12-31",
+          "basicEps": 23.9,
+          "source": {
+            "label": "LVMH 2022 Annual Report · basic EPS in EUR",
+            "url": "https://www.annualreports.com/HostedData/AnnualReportArchive/l/OTC_LVMUY_2022.pdf",
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        },
+        {
+          "periodStart": "2022-01-01",
+          "periodEnd": "2022-12-31",
+          "basicEps": 28.05,
+          "source": {
+            "label": "LVMH 2022 Annual Report · basic EPS in EUR",
+            "url": "https://www.annualreports.com/HostedData/AnnualReportArchive/l/OTC_LVMUY_2022.pdf",
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        },
+        {
+          "periodStart": "2023-01-01",
+          "periodEnd": "2023-12-31",
+          "basicEps": 30.34,
+          "source": {
+            "label": "LVMH 2025 Universal Registration Document · basic EPS in EUR",
+            "url": "https://lvmh-com.cdn.prismic.io/lvmh-com/aczo-pGXnQHGZKQ5_UniversalRegistrationDocument2025.pdf",
+            "page": 4,
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        },
+        {
+          "periodStart": "2024-01-01",
+          "periodEnd": "2024-12-31",
+          "basicEps": 25.13,
+          "source": {
+            "label": "LVMH 2025 Universal Registration Document · basic EPS in EUR",
+            "url": "https://lvmh-com.cdn.prismic.io/lvmh-com/aczo-pGXnQHGZKQ5_UniversalRegistrationDocument2025.pdf",
+            "page": 4,
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        },
+        {
+          "periodStart": "2025-01-01",
+          "periodEnd": "2025-12-31",
+          "basicEps": 21.86,
+          "source": {
+            "label": "LVMH 2025 Universal Registration Document · basic EPS in EUR",
+            "url": "https://lvmh-com.cdn.prismic.io/lvmh-com/aczo-pGXnQHGZKQ5_UniversalRegistrationDocument2025.pdf",
+            "page": 4,
+            "reportedMetric": "Basic Group share of net earnings per share"
+          }
+        }
+      ]
+    }
+  ]
+}
